@@ -28,14 +28,12 @@ def update_fuel_prices_job(request=None):
     stations_ref = db.collection('stations')
     stations = stations_ref.stream()
 
-    for doc in stations:
+for doc in stations:
         data = doc.to_dict()
         
-        # Vérification : On ne met à jour que si ce n'est pas une modif manuelle récente
-        # (Logique de sécurité pour éviter d'écraser un utilisateur)
+        # Vérification
         source = data.get('source', 'bot')
         if source == 'user':
-            # Optionnel : Vérifier si la modif date de plus de 24h
             continue 
 
         # Ton algorithme de calcul
@@ -49,9 +47,12 @@ def update_fuel_prices_job(request=None):
             'derniereModification': datetime.now().strftime("%d/%m/%Y"),
             'source': 'bot'
         })
+        
+        # --- AJOUT ICI ---
+        print(f"Mise à jour de {data.get('nom', 'Station')} effectuée.")
+        # -----------------
     
     return "Mise à jour terminée."
-
 def generate_dynamic_prices(station_name):
     # (Garde ici ta logique de calcul existante)
     # ...
