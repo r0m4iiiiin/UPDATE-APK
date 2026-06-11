@@ -1,0 +1,23 @@
+name: Mise à jour des prix
+on:
+  schedule:
+    - cron: '0 2 * * *' # S'exécute tous les jours à 02h00
+  workflow_dispatch: # Permet de le lancer manuellement quand tu veux
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        run: python main.py
