@@ -1,14 +1,26 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 import random
+import os
+import json
 from datetime import datetime
 
-# Initialisation du client Firebase
-# La Cloud Function utilise les identifiants par défaut du projet
-firebase_admin.initialize_app()
-db = firestore.client()
+# --- MODIFICATION ICI ---
+# Initialisation du client Firebase sécurisée
+if 'FIREBASE_SERVICE_ACCOUNT' in os.environ:
+    # On est sur GitHub Actions : on utilise la clé secrète
+    service_account_info = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
+    cred = credentials.Certificate(service_account_info)
+    firebase_admin.initialize_app(cred)
+else:
+    # On est sur Google Cloud (ou environnement local) : on utilise l'initialisation par défaut
+    firebase_admin.initialize_app()
 
-def update_fuel_prices_job(request):
+db = firestore.client()
+# -------------------------
+
+# Reste de ton code...
+def update_fuel_prices_job(request=None):
     """
     Cette fonction est appelée par le Cloud Scheduler.
     Elle parcourt toutes les stations et met à jour les prix.
