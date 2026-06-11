@@ -46,12 +46,14 @@ def update_fuel_prices_job(request=None):
     return "Mise à jour terminée."
 
 def generate_dynamic_prices(station_name):
-    # (Garde ici ta logique de calcul existante)
-    # ...
+    # ... ta logique actuelle ...
     return {
-        'prixDiesel': 39.40, # Exemple
+        'prixDiesel': 39.40,
         'prixEssence95': 41.20,
         'prixLPG': 24.30
-    } 
+    }
 
-
+# --- AJOUTE CES LIGNES TOUT EN BAS ---
+if __name__ == "__main__":
+    resultat = update_fuel_prices_job()
+    print(resultat)
