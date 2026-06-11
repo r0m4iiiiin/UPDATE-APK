@@ -2,7 +2,7 @@ name: Mise à jour des prix
 on:
   schedule:
     - cron: '0 2 * * *' # S'exécute tous les jours à 02h00
-  workflow_dispatch: # Permet de le lancer manuellement quand tu veux
+  workflow_dispatch: # Permet de le lancer manuellement quand tu veux pour tester
 
 jobs:
   build:
@@ -20,4 +20,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run script
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: python main.py
