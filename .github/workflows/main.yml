@@ -27,4 +27,7 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           echo "Démarrage du script..."
+          echo "Contenu du dossier courant :"
+          ls -F
+          echo "---"
           python main.py
