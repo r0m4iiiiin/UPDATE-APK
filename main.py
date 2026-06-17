@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor # Pour accélérer
 
 # Initialisation Firebase
 if not firebase_admin._apps:
@@ -15,63 +16,54 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-def get_station_url(name):
-    """Recherche l'URL de la station sur mbenzin.cz en utilisant le moteur de recherche du site"""
+def process_single_station(row):
+    """Fonction traitant une seule station"""
+    name = str(row['name']).strip()
+    station_id = name.replace(" ", "_").lower()
+    
+    # 1. Recherche URL
+    search_url = f"https://www.mbenzin.cz/index.php?s={name.replace(' ', '+')}"
     try:
-        search_url = f"https://www.mbenzin.cz/index.php?s={name.replace(' ', '+')}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(search_url, headers=headers, timeout=10)
+        response = requests.get(search_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Le premier résultat est généralement le bon
         link = soup.select_one(".station-result a")
-        if link:
-            return "https://www.mbenzin.cz" + link['href']
-    except:
-        return None
-    return None
+        
+        if not link:
+            print(f"⚠️ URL introuvable pour {name}", flush=True)
+            return
 
-def get_prices_from_url(url):
-    """Extrait les prix une fois l'URL trouvée"""
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        diesel = soup.select_one(".price-diesel").text.strip().replace(',', '.')
-        essence = soup.select_one(".price-natural95").text.strip().replace(',', '.')
-
-        return {
+        url = "https://www.mbenzin.cz" + link['href']
+        
+        # 2. Extraction prix
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+        soup_price = BeautifulSoup(res.text, 'html.parser')
+        
+        diesel = soup_price.select_one(".price-diesel").text.strip().replace(',', '.')
+        essence = soup_price.select_one(".price-natural95").text.strip().replace(',', '.')
+        
+        data = {
             "prixDiesel": float(diesel),
             "prixEssence95": float(essence),
-            "derniereModification": datetime.now().strftime("%d/%m/%Y")
+            "derniereModification": datetime.now().strftime("%d/%m/%Y %H:%M")
         }
+        
+        # 3. Mise à jour Firestore avec détails
+        db.collection('stations').document(station_id).set(data, merge=True)
+        print(f"🚀 {name} | Diesel: {diesel}€ | Essence: {essence}€", flush=True)
+        
     except Exception as e:
-        print(f"❌ Erreur extraction prix : {e}")
-        return None
+        print(f"❌ Erreur {name} : {e}", flush=True)
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, 'stations.csv')
-    df = pd.read_csv(csv_path)
-
-    for _, row in df.iterrows():
-        name = str(row['name']).strip()
-        station_id = name.replace(" ", "_").lower()
-        
-        print(f"🔍 Recherche URL pour : {name}...")
-        url = get_station_url(name)
-        
-        if url:
-            print(f"✅ URL trouvée : {url}")
-            data = get_prices_from_url(url)
-            if data:
-                db.collection('stations').document(station_id).set(data, merge=True)
-                print(f"🚀 Mise à jour réussie pour {name}")
-        else:
-            print(f"⚠️ URL introuvable pour {name}")
-        
-        time.sleep(2) # Anti-blocage
+    df = pd.read_csv(os.path.join(script_dir, 'stations.csv'))
+    
+    print(f"✅ Démarrage du traitement de {len(df)} stations...", flush=True)
+    
+    # Utilisation d'un ThreadPoolExecutor pour traiter 5 stations en parallèle
+    # Cela multiplie la vitesse par 5 sans trop surcharger le site
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        executor.map(process_single_station, [row for _, row in df.iterrows()])
 
 if __name__ == "__main__":
     main()
