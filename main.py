@@ -16,67 +16,52 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 def process_single_station(row):
+    lat = str(row['lat'])
+    lon = str(row['lon'])
     name = str(row['name']).strip()
-    url = str(row.get('url', '')).strip()
     station_id = name.replace(" ", "_").lower()
     
-    print(f"🔄 Traitement : {name}...", flush=True)
+    # URL de recherche par coordonnées sur mbenzin.cz
+    # Le site utilise souvent des paramètres de recherche cartographique
+    search_url = f"https://www.mbenzin.cz/index.php?lat={lat}&lon={lon}"
     
     try:
-        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
+        # On utilise une session pour garder les cookies et simuler un vrai navigateur
+        session = requests.Session()
+        session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
         
-        # Tentative 1 : Sélecteurs actuels
-        el_diesel = soup.select_one(".price-diesel")
-        el_essence = soup.select_one(".price-natural95")
+        # 1. On cherche la station via les coordonnées
+        response = session.get(search_url, timeout=15)
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Tentative 2 (Secours) : Si les classes ont changé, on cherche dans les balises génériques
-        # Souvent les prix sont dans des éléments avec la classe 'price' ou 'value'
-        if not el_diesel:
-            el_diesel = soup.select_one("div[class*='diesel']") # Cherche un div contenant 'diesel'
-        if not el_essence:
-            el_essence = soup.select_one("div[class*='natural95']")
+        # On cherche le lien vers la station (le premier résultat de la recherche)
+        link = soup.select_one(".station-result a")
+        if not link:
+            print(f"⚠️ Aucune station trouvée pour {name} aux coordonnées {lat}, {lon}", flush=True)
+            return
 
-        if el_diesel and el_essence:
-            diesel = el_diesel.text.strip().replace(',', '.')
-            essence = el_essence.text.strip().replace(',', '.')
-            
-            # Nettoyage supplémentaire : garde seulement les chiffres et le point
-            diesel = ''.join(c for c in diesel if c.isdigit() or c == '.')
-            essence = ''.join(c for c in essence if c.isdigit() or c == '.')
-            
+        station_url = "https://www.mbenzin.cz" + link['href']
+        
+        # 2. On récupère les prix sur cette page précise
+        res = session.get(station_url, timeout=15)
+        soup_price = BeautifulSoup(res.text, 'html.parser')
+        
+        # IMPORTANT : Inspectez ces classes dans votre navigateur sur une page de station
+        # Si vous voyez toujours 'PRIX NON TROUVÉS', c'est que ces classes sont les mauvaises.
+        diesel = soup_price.select_one(".price-diesel")
+        essence = soup_price.select_one(".price-natural95")
+        
+        if diesel and essence:
             data = {
                 "name": name,
-                "prixDiesel": float(diesel),
-                "prixEssence95": float(essence),
+                "prixDiesel": float(diesel.text.replace(',', '.')),
+                "prixEssence95": float(essence.text.replace(',', '.')),
                 "derniereModification": datetime.now().strftime("%d/%m/%Y %H:%M")
             }
-            
             db.collection('stations').document(station_id).set(data, merge=True)
-            print(f"✅ SUCCÈS | {name} | Diesel: {diesel} | Essence: {essence}", flush=True)
+            print(f"✅ SUCCÈS | {name} | Diesel: {diesel.text} | Essence: {essence.text}", flush=True)
         else:
-            # DEBUG CRUCIAL : On affiche une partie du HTML pour comprendre la structure
-            print(f"❌ PRIX NON TROUVÉS pour {name}", flush=True)
-            # Affiche les 300 premiers caractères du HTML pour inspecter les classes
-            print(f"DEBUG HTML: {res.text[:300]}", flush=True) 
+            print(f"❌ PRIX INTROUVABLES sur {station_url}", flush=True)
             
     except Exception as e:
         print(f"❌ ERREUR pour {name} : {e}", flush=True)
-
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, 'station.csv')
-    
-    df = pd.read_csv(csv_path)
-    df = df.dropna(subset=['name', 'url'])
-    
-    print(f"✅ Fichier chargé. {len(df)} stations à traiter.", flush=True)
-    
-    # On réduit max_workers à 2 pour éviter d'être bloqué par le site (anti-bot)
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        executor.map(process_single_station, [row for _, row in df.iterrows()])
-    
-    print(f"🏁 Traitement terminé.", flush=True)
-
-if __name__ == "__main__":
-    main()
