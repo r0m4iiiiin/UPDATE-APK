@@ -6,25 +6,20 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 import os
 def process_stations_from_csv():
-    # On cherche récursivement le fichier dans tout le dossier du projet
-    target_file = 'stations.csv'
-    found_path = None
+    # Force le dossier de travail à être celui où se trouve le script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
     
-    # Parcourt tous les dossiers à partir de la racine
-    for root, dirs, files in os.walk(os.getcwd()):
-        if target_file in files:
-            found_path = os.path.join(root, target_file)
-            break
-            
-    if not found_path:
-        # Debug : liste tout ce qui existe pour nous aider
-        print("❌ Fichier non trouvé. Voici l'arborescence actuelle :")
-        for root, dirs, files in os.walk(os.getcwd()):
-            print(f"Dossier: {root} -> Fichiers: {files}")
-        raise FileNotFoundError(f"Le fichier {target_file} est introuvable dans le dépôt.")
+    csv_filename = 'stations.csv'
+    
+    # Debug profond
+    print(f"DEBUG: Dossier actuel : {os.getcwd()}")
+    print(f"DEBUG: Contenu du dossier : {os.listdir('.')}")
+    
+    if csv_filename not in os.listdir('.'):
+        raise FileNotFoundError(f"Le fichier '{csv_filename}' est introuvable dans {os.getcwd()}")
         
-    print(f"✅ Fichier trouvé ici : {found_path}")
-    df = pd.read_csv(found_path)
+    df = pd.read_csv(csv_filename)
 # Initialisation Firebase sécurisée
 if not firebase_admin._apps:
     firebase_admin.initialize_app()
