@@ -1,13 +1,12 @@
 import pandas as pd
 import os
-import time
 import json
 import requests
 from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor # Pour accélérer
+from concurrent.futures import ThreadPoolExecutor
 
 # Initialisation Firebase
 if not firebase_admin._apps:
@@ -17,51 +16,54 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 def process_single_station(row):
-    """Fonction traitant une seule station"""
+    """Extrait les prix et met à jour Firebase"""
     name = str(row['name']).strip()
+    url = str(row.get('url', '')).strip()
     station_id = name.replace(" ", "_").lower()
     
-    # 1. Recherche URL
-    search_url = f"https://www.mbenzin.cz/index.php?s={name.replace(' ', '+')}"
-    try:
-        response = requests.get(search_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        link = soup.select_one(".station-result a")
-        
-        if not link:
-            print(f"⚠️ URL introuvable pour {name}", flush=True)
-            return
+    if not url or url == 'nan':
+        return # Ignore les lignes sans URL
 
-        url = "https://www.mbenzin.cz" + link['href']
+    try:
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
+        soup = BeautifulSoup(res.text, 'html.parser')
         
-        # 2. Extraction prix
-        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-        soup_price = BeautifulSoup(res.text, 'html.parser')
+        # Extraction sécurisée
+        el_diesel = soup.select_one(".price-diesel")
+        el_essence = soup.select_one(".price-natural95")
         
-        diesel = soup_price.select_one(".price-diesel").text.strip().replace(',', '.')
-        essence = soup_price.select_one(".price-natural95").text.strip().replace(',', '.')
-        
-        data = {
-            "prixDiesel": float(diesel),
-            "prixEssence95": float(essence),
-            "derniereModification": datetime.now().strftime("%d/%m/%Y %H:%M")
-        }
-        
-        # 3. Mise à jour Firestore avec détails
-        db.collection('stations').document(station_id).set(data, merge=True)
-        print(f"🚀 {name} | Diesel: {diesel}€ | Essence: {essence}€", flush=True)
-        
+        if el_diesel and el_essence:
+            diesel = el_diesel.text.strip().replace(',', '.')
+            essence = el_essence.text.strip().replace(',', '.')
+            
+            data = {
+                "name": name,
+                "prixDiesel": float(diesel),
+                "prixEssence95": float(essence),
+                "derniereModification": datetime.now().strftime("%d/%m/%Y %H:%M")
+            }
+            
+            db.collection('stations').document(station_id).set(data, merge=True)
+            print(f"🚀 {name} | Diesel: {diesel}€ | Essence: {essence}€", flush=True)
+            
     except Exception as e:
         print(f"❌ Erreur {name} : {e}", flush=True)
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    df = pd.read_csv(os.path.join(script_dir, 'stations.csv'))
+    # J'ai mis 'station.csv' ici, assurez-vous que le fichier s'appelle bien comme ça sur GitHub
+    csv_path = os.path.join(script_dir, 'station.csv')
     
-    print(f"✅ Démarrage du traitement de {len(df)} stations...", flush=True)
+    if not os.path.exists(csv_path):
+        print(f"❌ Fichier 'station.csv' introuvable ! Vérifiez le nom dans GitHub.")
+        return
+
+    df = pd.read_csv(csv_path)
+    # Nettoyage : supprime les lignes où le nom ou l'url est vide
+    df = df.dropna(subset=['name', 'url'])
     
-    # Utilisation d'un ThreadPoolExecutor pour traiter 5 stations en parallèle
-    # Cela multiplie la vitesse par 5 sans trop surcharger le site
+    print(f"✅ Fichier chargé. Traitement de {len(df)} stations...", flush=True)
+    
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(process_single_station, [row for _, row in df.iterrows()])
 
