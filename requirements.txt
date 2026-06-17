@@ -1,2 +1,6 @@
 firebase-admin
 google-cloud-firestore
+pandas
+requests
+beautifulsoup4
+firebase-admin
