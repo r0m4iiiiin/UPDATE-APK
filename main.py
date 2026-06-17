@@ -1,8 +1,8 @@
 import pandas as pd
 import os
-import requests
+import time
 import json
-import time  # <--- Import nécessaire
+import requests
 from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -13,78 +13,65 @@ if not firebase_admin._apps:
     service_account_info = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
     cred = credentials.Certificate(service_account_info)
     firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
-def get_prices_from_mbenzin(url):
+def get_station_url(name):
+    """Recherche l'URL de la station sur mbenzin.cz en utilisant le moteur de recherche du site"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
+        search_url = f"https://www.mbenzin.cz/index.php?s={name.replace(' ', '+')}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(search_url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Le premier résultat est généralement le bon
+        link = soup.select_one(".station-result a")
+        if link:
+            return "https://www.mbenzin.cz" + link['href']
+    except:
+        return None
+    return None
+
+def get_prices_from_url(url):
+    """Extrait les prix une fois l'URL trouvée"""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Recherche sécurisée des éléments
-        el_diesel = soup.select_one(".price-diesel")
-        el_essence = soup.select_one(".price-natural95")
+        diesel = soup.select_one(".price-diesel").text.strip().replace(',', '.')
+        essence = soup.select_one(".price-natural95").text.strip().replace(',', '.')
 
-        # LOG DE DÉBOGAGE : Affiche ce qu'il voit dans le HTML
-        if not el_diesel or not el_essence:
-            print(f"DEBUG: Structure HTML inattendue sur {url}")
-            print(f"DEBUG: Élément Diesel trouvé ? {el_diesel is not None}")
-            print(f"DEBUG: Élément Essence trouvé ? {el_essence is not None}")
-            return None
-
-        # Extraction propre
-        diesel = el_diesel.text.strip().replace(',', '.')
-        essence = el_essence.text.strip().replace(',', '.')
-
-        # Validation : vérifie si les valeurs sont bien des nombres
         return {
             "prixDiesel": float(diesel),
             "prixEssence95": float(essence),
             "derniereModification": datetime.now().strftime("%d/%m/%Y")
         }
     except Exception as e:
-        print(f"❌ Erreur lors de l'extraction sur {url} : {e}")
+        print(f"❌ Erreur extraction prix : {e}")
         return None
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(script_dir, 'stations.csv')
-    
-    if not os.path.exists(csv_path):
-        print(f"❌ Erreur : 'stations.csv' introuvable")
-        return
-
     df = pd.read_csv(csv_path)
-    print(f"✅ Fichier chargé. Traitement de {len(df)} stations...")
-    
+
     for _, row in df.iterrows():
-        # Utilisation de 'name' au lieu de 'id' car 'id' n'existe pas dans votre CSV
-        # On crée un identifiant Firestore propre en remplaçant les espaces par des tirets
         name = str(row['name']).strip()
-        station_id = name.replace(" ", "_").lower() 
+        station_id = name.replace(" ", "_").lower()
         
-        # Note : Dans votre CSV actuel, il n'y a pas d'URL ! 
-        # Si vous n'avez pas d'URL, vous devez utiliser la logique de recherche par nom
-        # Pour l'instant, je suppose que vous ajouterez une colonne 'url' ou chercherez par nom.
-        url = row.get('url') 
+        print(f"🔍 Recherche URL pour : {name}...")
+        url = get_station_url(name)
         
-        if not url:
-            continue
-            
-        print(f"🔍 Scraping : {name}...")
-        data = get_prices_from_mbenzin(url)
-        
-        if data:
-            try:
-                # On utilise .set(data, merge=True) pour créer ou mettre à jour
+        if url:
+            print(f"✅ URL trouvée : {url}")
+            data = get_prices_from_url(url)
+            if data:
                 db.collection('stations').document(station_id).set(data, merge=True)
-                print(f"✅ Mise à jour réussie pour {name}")
-            except Exception as e:
-                print(f"❌ Erreur Firestore pour {name} : {e}")
+                print(f"🚀 Mise à jour réussie pour {name}")
+        else:
+            print(f"⚠️ URL introuvable pour {name}")
         
-        # PAUSE : Indispensable pour ne pas être bloqué par le site
-        time.sleep(2) 
+        time.sleep(2) # Anti-blocage
 
 if __name__ == "__main__":
     main()
