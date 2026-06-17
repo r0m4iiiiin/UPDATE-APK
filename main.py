@@ -16,19 +16,22 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 def process_single_station(row):
-    """Extrait les prix et met à jour Firebase"""
+    """Extrait les prix et met à jour Firebase avec logs détaillés"""
     name = str(row['name']).strip()
     url = str(row.get('url', '')).strip()
     station_id = name.replace(" ", "_").lower()
     
+    # Log de début de traitement
+    print(f"🔄 Traitement : {name}...", flush=True)
+    
     if not url or url == 'nan':
-        return # Ignore les lignes sans URL
+        print(f"⚠️ URL invalide pour {name}", flush=True)
+        return
 
     try:
-        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # Extraction sécurisée
         el_diesel = soup.select_one(".price-diesel")
         el_essence = soup.select_one(".price-natural95")
         
@@ -44,28 +47,32 @@ def process_single_station(row):
             }
             
             db.collection('stations').document(station_id).set(data, merge=True)
-            print(f"🚀 {name} | Diesel: {diesel}€ | Essence: {essence}€", flush=True)
+            print(f"✅ SUCCÈS | {name} | Diesel: {diesel} | Essence: {essence}", flush=True)
+        else:
+            print(f"❌ PRIX NON TROUVÉS | {name} (Vérifiez le sélecteur CSS)", flush=True)
             
     except Exception as e:
-        print(f"❌ Erreur {name} : {e}", flush=True)
+        print(f"❌ ERREUR pour {name} : {e}", flush=True)
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # J'ai mis 'station.csv' ici, assurez-vous que le fichier s'appelle bien comme ça sur GitHub
     csv_path = os.path.join(script_dir, 'station.csv')
     
     if not os.path.exists(csv_path):
-        print(f"❌ Fichier 'station.csv' introuvable ! Vérifiez le nom dans GitHub.")
+        print(f"❌ Fichier 'station.csv' introuvable dans {script_dir}", flush=True)
         return
 
     df = pd.read_csv(csv_path)
-    # Nettoyage : supprime les lignes où le nom ou l'url est vide
+    # Nettoyage
     df = df.dropna(subset=['name', 'url'])
     
-    print(f"✅ Fichier chargé. Traitement de {len(df)} stations...", flush=True)
+    print(f"✅ Fichier chargé. {len(df)} stations prêtes à être traitées.", flush=True)
     
+    # Utilisation du Pool d'exécution
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(process_single_station, [row for _, row in df.iterrows()])
+    
+    print(f"🏁 Traitement terminé.", flush=True)
 
 if __name__ == "__main__":
     main()
