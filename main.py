@@ -21,18 +21,30 @@ def get_prices_from_mbenzin(url):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         response = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # NOTE : Si ces sélecteurs ne fonctionnent pas, c'est que la classe CSS sur mbenzin a changé.
-        diesel = soup.select_one(".price-diesel").text.strip().replace(',', '.')
-        essence = soup.select_one(".price-natural95").text.strip().replace(',', '.')
-        
+
+        # Recherche sécurisée des éléments
+        el_diesel = soup.select_one(".price-diesel")
+        el_essence = soup.select_one(".price-natural95")
+
+        # LOG DE DÉBOGAGE : Affiche ce qu'il voit dans le HTML
+        if not el_diesel or not el_essence:
+            print(f"DEBUG: Structure HTML inattendue sur {url}")
+            print(f"DEBUG: Élément Diesel trouvé ? {el_diesel is not None}")
+            print(f"DEBUG: Élément Essence trouvé ? {el_essence is not None}")
+            return None
+
+        # Extraction propre
+        diesel = el_diesel.text.strip().replace(',', '.')
+        essence = el_essence.text.strip().replace(',', '.')
+
+        # Validation : vérifie si les valeurs sont bien des nombres
         return {
             "prixDiesel": float(diesel),
             "prixEssence95": float(essence),
             "derniereModification": datetime.now().strftime("%d/%m/%Y")
         }
     except Exception as e:
-        print(f"❌ Impossible d'extraire les données : {e}")
+        print(f"❌ Erreur lors de l'extraction sur {url} : {e}")
         return None
 
 def main():
