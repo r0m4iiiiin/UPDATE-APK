@@ -5,7 +5,16 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 import os
-
+def process_stations_from_csv():
+    # Définit le chemin du script (main.py)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Construit le chemin vers le CSV à côté du script
+    csv_path = os.path.join(script_dir, 'stations.csv')
+    
+    if not os.path.exists(csv_path):
+        print(f"❌ Erreur : Fichier introuvable à : {csv_path}")
+        return
+df = pd.read_csv(csv_path)
 # Initialisation Firebase sécurisée
 if not firebase_admin._apps:
     firebase_admin.initialize_app()
